@@ -1,0 +1,3 @@
+__pycache__/
+*.pyc
+data/vector_store/log_index.json

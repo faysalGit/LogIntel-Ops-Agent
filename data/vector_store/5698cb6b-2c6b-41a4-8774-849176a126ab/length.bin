@@ -1,0 +1,6 @@
+2026-08-16 14:15:22 [main-executor] INFO - System health check passed.
+2026-08-16 14:16:05 [worker-3] ERROR - OutOfMemoryError encountered for job_id=7777 heap capacity exceeded.
+java.lang.OutOfMemoryError: Java heap space
+	at com.ops.engine.Runner.execute(Runner.java:82)
+	at com.ops.engine.Runner.main(Runner.java:12)
+2026-08-16 14:16:10 [main-executor] INFO - Monitoring thread restarting worker-3
