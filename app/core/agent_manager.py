@@ -10,8 +10,9 @@ class LogAgentOrchestrator:
     """
     Enterprise-grade AI Agent Orchestrator ("The Brain").
     Enforces strict, mutually exclusive architectural routing rules:
-    - Negative Feedback: Intercepted at topmost priority to handle criticism humbly.
-    - Conversational Phrases: Intercepted to return polite, helpful AI dialogue.
+    - Negative Feedback: Intercepted first to handle criticism and remarks like 'weird' humbly.
+    - Conversational Phrases: Intercepted to return polite dialogue (handles 'good', 'nice job').
+    - SQL Table Requests: Comprehensive pattern-matching to capture short fragments (e.g., 'pull job', 'records from table').
     - Time Queries: Intercepted to output ONLY clean dates and times.
     - Session State Tracking: Remembers the last queried JobID across conversational turns.
     - Decoupled Delegation: Offloads database, email, and indexing lookups to separate handlers.
@@ -59,42 +60,48 @@ class LogAgentOrchestrator:
                 target_job_id = None
                 using_memory_fallback = False
 
-            # Step 3: Compute Intent Request Flags
+            # Step 3: Compute Intent Request Flags with expanded, resilient keyword arrays
             is_negative_feedback = any(
                 phrase in message_lower for phrase in [
                     "dumb", "dump", "stupid", "can't do good job", "cant do good job",
-                    "bad job", "useless", "not intelligent", "idiot", "poor work"
+                    "bad job", "useless", "not intelligent", "idiot", "poor work", "weird"
                 ]
             )
+            
             is_compliment_or_greeting = any(
                 phrase in message_lower for phrase in [
-                    "i love you", "thank you", "thanks", "nice work", 
-                    "great job", "awesome", "hello", "hi", "good job"
+                    "i love you", "thank you", "thanks", "nice work", "nice job",
+                    "great job", "great work", "good job", "good work", "awesome", 
+                    "hello", "hi", "hey", "perfect", "well done", "excellent", "good"
                 ]
             )
+            
             is_time_request = (
                 "time" in message_lower or 
                 "when" in message_lower or 
                 "date" in message_lower
             )
+            
             is_email_request = (
                 "email" in message_lower or 
                 "draft" in message_lower or 
                 "notify" in message_lower or
                 "create an email" in message_lower
             )
-            is_sql_request = (
-                "pull job records" in message_lower or 
-                "job table" in message_lower or 
-                "select" in message_lower or
-                "metadata" in message_lower
+            
+            # Highly flexible multi-keyword scanner covering short phrasing segments
+            is_sql_request = any(
+                keyword in message_lower for keyword in [
+                    "pull job", "pull records", "records from", "from table", "job table", 
+                    "sql records", "query table", "database records", "select", "bics"
+                ]
             )
 
             # ==============================================================================
             # CRITICAL INTENT ROUTING LAYER (MUTUALLY EXCLUSIVE HIERARCHY)
             # ==============================================================================
             
-            # PRIORITY 1: NEGATIVE FEEDBACK INTERCEPTOR (Handles complaints and insults politely)
+            # PRIORITY 1: NEGATIVE FEEDBACK INTERCEPTOR (Handles complaints and remarks like 'weird')
             if is_negative_feedback:
                 return (
                     "😔 **LogIntel Agent:** I am still learning and working hard to improve. "
@@ -102,7 +109,7 @@ class LogAgentOrchestrator:
                     "and I will try my absolute best to answer them accurately!"
                 )
 
-            # PRIORITY 2: CONVERSATIONAL COMPLIMENTS & GREETINGS
+            # PRIORITY 2: CONVERSATIONAL COMPLIMENTS & GREETINGS (Handles 'good', 'nice job' etc.)
             if is_compliment_or_greeting:
                 if "love" in message_lower:
                     return (
@@ -121,7 +128,43 @@ class LogAgentOrchestrator:
                     "or pull records from the job table!"
                 )
 
-            # PRIORITY 3: TIME-SPECIFIC EXTRACTION (Blocks full log text leaks entirely)
+            # PRIORITY 3: OUT-OF-BOX SCOPE GUARDRAIL
+            is_known_operational_intent = (
+                is_time_request or 
+                is_email_request or 
+                is_sql_request or 
+                current_extracted_id
+            )
+            
+            if not is_known_operational_intent:
+                return (
+                    "🤖 **LogIntel Agent:** I notice your question is outside my operational tracking scope. "
+                    "I am a specialized log chat helper and diagnostic triage assistant, not a general chatbot, "
+                    "so I cannot answer general knowledge or out-of-box questions.\n\n"
+                    "**Please interact with me using these valid operational prompt examples:**\n"
+                    "1. 🔍 **Log Diagnostics:** *'What happened to job 1234?'* or *'Analyze errors'*.\n"
+                    "2. 🗄️ **Relational Audit:** *'pull job records from job table for 1234'*.\n"
+                    "3. ⏰ **Time Frameworks:** *'what time job failed?'*.\n"
+                    "4. 📧 **Incident Alerting:** *'create an email'* or *'draft a notification report'*."
+                )
+
+            # PRIORITY 4: EXPLICIT SQL DATA DICTIONARY AUDIT REGISTRY EXTRACTION
+            if is_sql_request:
+                if not target_job_id:
+                    return (
+                        "### 🗄️ SSMS Relational Database Lookup System\n\n"
+                        "ℹ️ **Query Blocked:** You requested rows from table `[BICS].[dbo].[Job]`, but did not supply a JobID number.\n\n"
+                        "**Please format your request using these specific examples:**\n"
+                        "- *'pull job records from job table for 1234'*\n"
+                        "- *'pull from table for job 1234'*"
+                    )
+                
+                sql_data = self.sql_manager.query_sql_job_details(target_job_id)
+                if not sql_data:
+                    return f"❌ **SQL Database Alert:** No master registration entries found inside table `[BICS].[dbo].[Job]` for ID `{target_job_id}`."
+                return self.sql_manager.format_sql_audit_report(target_job_id, sql_data)
+
+            # PRIORITY 5: TIME-SPECIFIC EXTRACTION (Blocks full log text leaks entirely)
             if is_time_request:
                 log_hits = self.log_manager.query_logs(query_text="error failure failed timestamp", target_job_id=target_job_id, limit=5)
                 valid_traces = [h for h in log_hits if "No log traces" not in h.get("text", "")]
@@ -141,7 +184,7 @@ class LogAgentOrchestrator:
                     output_report += f"\n*Context Note: Automatically tracking context for session history JobID {target_job_id}.*"
                 return output_report
 
-            # PRIORITY 4: AUTOMATED INCIDENT EMAIL GENERATION
+            # PRIORITY 6: AUTOMATED INCIDENT EMAIL GENERATION
             if is_email_request:
                 if not target_job_id:
                     global_errors = self.log_manager.query_logs(query_text="error exception failed", target_job_id=None)
@@ -163,21 +206,7 @@ class LogAgentOrchestrator:
                 log_hits = self.log_manager.query_logs(query_text="error failure stack trace", target_job_id=target_job_id)
                 return self.email_operator.compile_incident_email(target_job_id, sql_data, log_hits)
 
-            # PRIORITY 5: EXPLICIT SQL DATA DICTIONARY AUDIT REGISTRY EXTRACTION
-            if is_sql_request:
-                if not target_job_id:
-                    return (
-                        "### 🗄️ SSMS Relational Database Lookup System\n\n"
-                        "ℹ️ **Query Blocked:** You requested rows from table `[BICS].[dbo].[Job]`, but did not supply a JobID number.\n\n"
-                        "Please issue the query matching this pattern: *'pull job records from job table for 1234'*."
-                    )
-                
-                sql_data = self.sql_manager.query_sql_job_details(target_job_id)
-                if not sql_data:
-                    return f"❌ **SQL Database Alert:** No master registration entries found inside table `[BICS].[dbo].[Job]` for ID `{target_job_id}`."
-                return self.sql_manager.format_sql_audit_report(target_job_id, sql_data)
-
-            # PRIORITY 6: GLOBAL SYSTEM SCAN MODE (NO JOB ID PROVIDED AT ALL)
+            # PRIORITY 7: GLOBAL SYSTEM SCAN MODE (NO JOB ID PROVIDED AT ALL)
             if not target_job_id:
                 global_hits = self.log_manager.query_logs(query_text=user_message, target_job_id=None, limit=5)
                 valid_traces = [h for h in global_hits if "No log traces" not in h.get("text", "")]
@@ -199,7 +228,7 @@ class LogAgentOrchestrator:
                     summary_output += f"#### Event {idx + 1} (Source Reference: `{source}`)\n```text\n{text_snippet}...\n```\n\n"
                 return summary_output
 
-            # PRIORITY 7: DEFAULT RAG WORKFLOW (TARGETED LOG FILE ANALYSIS)
+            # PRIORITY 8: DEFAULT RAG WORKFLOW (TARGETED LOG FILE ANALYSIS)
             log_hits = self.log_manager.query_logs(query_text=user_message, target_job_id=target_job_id)
             context_notice = ""
             if using_memory_fallback:
