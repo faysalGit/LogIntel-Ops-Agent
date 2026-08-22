@@ -23,6 +23,9 @@ The architecture follows a strict, decoupled pipeline built to maximize determin
 [ System Dashboard UI ] ──► Gradio Web Engine Interface Workspace
 ```
 
+<img width="1536" height="1024" alt="LogIntel-Ops-Agent-Architecture" src="https://github.com/user-attachments/assets/c988321d-7524-4c3e-bff1-ee40275a498b" />
+
+
 **1. Data Ingestion Control Pipeline:** Accepts application logs via a local drag-and-drop file container component or via an automated HTTP remote connection stream parser (requests).
 
 **2. Deterministic Pre-flight Line-Isolated Validation:** Prior to storage allocation, chunks pass through a strict regex-driven pre-flight boundary inspection matrix to detect and discard non-log textual anomalies (such as generic essays, code documentation files, or raw notes).
